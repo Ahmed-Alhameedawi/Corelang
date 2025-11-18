@@ -1,0 +1,17 @@
+; Simple Hello World module in CORE
+
+(mod hello
+  :version "1.0.0"
+  :tenant "core.default"
+
+  (fn greet :v1
+    :stability stable
+    :rollback-safe true
+    :requires []
+    :inputs [(name :string)]
+    :outputs [(greeting :string)]
+    :pure true
+    :doc "Generate a greeting message"
+
+    (body
+      (str "Hello, " name "!"))))

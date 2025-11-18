@@ -1,0 +1,196 @@
+(* CORE Language Grammar (EBNF) *)
+(* Version 0.1.0 *)
+
+(* ========== Lexical Elements ========== *)
+
+IDENT       = letter { letter | digit | "_" | "-" } ;
+NUMBER      = [ "-" ] digit { digit } [ "." digit { digit } ] ;
+STRING      = '"' { any_char - '"' | '\"' } '"' ;
+KEYWORD     = "mod" | "fn" | "type" | "role" | "perm" | "policy" | "principal"
+            | "chan" | "contract" | "task" | "effect" | "body" | "let" | "if"
+            | "match" | "do" | "import" | "export" ;
+
+letter      = "a" | "b" | ... | "z" | "A" | "B" | ... | "Z" ;
+digit       = "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" ;
+
+(* ========== Top Level ========== *)
+
+module      = "(" "mod" IDENT meta_list element_list ")" ;
+element     = type_def | function | role_def | permission | policy_def | channel | contract ;
+
+(* ========== Metadata ========== *)
+
+meta_list   = { meta_item } ;
+meta_item   = ":" IDENT value ;
+
+(* ========== Type Definitions ========== *)
+
+type_def    = "(" "type" IDENT version_info field_list ")" ;
+field_list  = "[" { field_def } "]" ;
+field_def   = "(" IDENT type_expr [ classify ] ")" ;
+classify    = ":classify" classification_level ;
+classification_level = ":public" | ":internal" | ":confidential" | ":restricted" ;
+
+type_expr   = ":" ( primitive_type | IDENT | generic_type | sum_type ) ;
+primitive_type = "unit" | "bool" | "int" | "float" | "string" | "bytes"
+               | "timestamp" | "uuid" | "json" ;
+generic_type = "(" type_constructor type_expr { type_expr } ")" ;
+type_constructor = "List" | "Map" | "Option" | "Result" ;
+sum_type    = "{" variant { "|" variant } "}" ;
+variant     = IDENT [ type_expr ] ;
+
+(* ========== Version Information ========== *)
+
+version_info = ":v" version_num [ ":replaces" version_ref ] { version_flag } ;
+version_num  = NUMBER [ "." NUMBER [ "." NUMBER ] ] ;
+version_ref  = ":v" version_num ;
+version_flag = ":rollback-safe" bool_value
+             | ":rollback-requires" STRING
+             | ":stability" stability_level
+             | ":deprecated" bool_value ;
+stability_level = "stable" | "beta" | "alpha" | "deprecated" ;
+
+(* ========== Functions ========== *)
+
+function    = "(" "fn" IDENT version_info security_attrs signature effects_decl
+              metadata_attrs body ")" ;
+
+security_attrs = { security_attr } ;
+security_attr  = ":requires" "[" role_list "]"
+               | ":capabilities" "[" capability_list "]"
+               | ":accesses" "[" permission_list "]"
+               | ":audit-required" bool_value
+               | ":handles-secrets" bool_value
+               | ":crosses-boundary" bool_value ;
+
+role_list       = { IDENT } ;
+capability_list = { IDENT } ;
+permission_list = { IDENT } ;
+
+signature   = ":inputs" param_list ":outputs" param_list ;
+param_list  = "[" { param_def } "]" ;
+param_def   = "(" IDENT type_expr [ ":optional" bool_value ] ")" ;
+
+effects_decl = [ ":effects" "[" effect_list "]" ] ;
+effect_list  = { effect_def } ;
+effect_def   = "(" effect_type STRING ")" ;
+effect_type  = "db.read" | "db.write" | "http.call" | "fs.read" | "fs.write"
+             | "event.emit" | "event.subscribe" | "log" | "random" | "time" ;
+
+metadata_attrs = { metadata_attr } ;
+metadata_attr  = ":doc" STRING
+               | ":pure" bool_value
+               | ":idempotent" bool_value
+               | ":decomposition" json_object
+               | ":error-taxonomy" json_object
+               | ":examples" json_array ;
+
+body        = "(" "body" expr_list ")" ;
+
+(* ========== Expressions ========== *)
+
+expr_list   = { expr } ;
+expr        = literal
+            | var_ref
+            | let_expr
+            | if_expr
+            | cond_expr
+            | match_expr
+            | call_expr
+            | do_expr
+            | lambda_expr ;
+
+literal     = NUMBER | STRING | bool_value | "Unit" ;
+bool_value  = "true" | "false" ;
+var_ref     = IDENT ;
+
+let_expr    = "(" "let" "[" binding_list "]" expr_list ")" ;
+binding_list = { binding } ;
+binding     = IDENT expr ;
+
+if_expr     = "(" "if" expr expr expr ")" ;
+
+cond_expr   = "(" "cond" cond_clause_list [ else_clause ] ")" ;
+cond_clause_list = { cond_clause } ;
+cond_clause = "[" expr expr "]" ;
+else_clause = "[" ":else" expr "]" ;
+
+match_expr  = "(" "match" expr match_clause_list ")" ;
+match_clause_list = { match_clause } ;
+match_clause = "[" pattern expr "]" ;
+pattern     = literal | IDENT | "(" IDENT pattern_list ")" | "_" ;
+pattern_list = { pattern } ;
+
+call_expr   = "(" [ qualified_name ] expr_list ")" ;
+qualified_name = IDENT { "." IDENT } [ ":" version_ref ] ;
+
+do_expr     = "(" "do" expr_list ")" ;
+
+lambda_expr = "(" "fn" param_list expr ")" ;
+
+(* ========== Security Primitives ========== *)
+
+role_def    = "(" "role" IDENT [ ":perms" "[" permission_list "]" ]
+              [ ":inherits" "[" role_list "]" ] ")" ;
+
+permission  = "(" "perm" IDENT [ ":description" STRING ]
+              [ ":scope" scope_def ] [ ":classification" classification_level ]
+              [ ":audit-required" bool_value ] ")" ;
+scope_def   = "[" scope_item { scope_item } "]" ;
+scope_item  = "resource:" IDENT | "action:" IDENT ;
+
+policy_def  = "(" "policy" IDENT [ ":description" STRING ]
+              ":rules" "[" rule_list "]" ")" ;
+rule_list   = { rule_def } ;
+rule_def    = "(" rule_effect role_ref "[" permission_list "]"
+              [ rule_constraints ] ")" ;
+rule_effect = "allow" | "deny" ;
+role_ref    = IDENT ;
+rule_constraints = { rule_constraint } ;
+rule_constraint = ":all-versions"
+                | ":stable-only"
+                | ":versions" version_constraint
+                | ":when" expr
+                | ":reason" STRING ;
+version_constraint = STRING | "[" stability_level_list "]" ;
+stability_level_list = { stability_level } ;
+
+(* ========== Channels and Contracts ========== *)
+
+channel     = "(" "chan" IDENT [ ":mode" channel_mode ]
+              [ ":security" security_config ] ":events" "[" event_list "]" ")" ;
+channel_mode = "pub-sub" | "queue" | "stream" ;
+security_config = "{" { ":" IDENT "[" permission_list "]" } "}" ;
+event_list  = { event_def } ;
+event_def   = "(" "event" IDENT version_info [ ":schema" type_def ] ")" ;
+
+contract    = "(" "contract" IDENT version_info [ ":operations" "[" IDENT_list "]" ]
+              [ ":guarantees" "[" IDENT_list "]" ] ")" ;
+IDENT_list  = { IDENT } ;
+
+(* ========== Import/Export ========== *)
+
+import_decl = "(" "import" IDENT [ ":version" STRING ]
+              [ ":functions" "[" import_func_list "]" ]
+              [ ":channels" "[" import_chan_list "]" ] ")" ;
+import_func_list = { import_func } ;
+import_func = "(" IDENT version_constraint ")" ;
+import_chan_list = { import_chan } ;
+import_chan = "(" IDENT ":subscribe" | ":publish" ")" ;
+
+export_decl = "(" "export" export_item_list ")" ;
+export_item_list = { export_item } ;
+export_item = "(" element_type IDENT version_info [ ":visibility" visibility ] ")" ;
+element_type = "fn" | "type" | "chan" ;
+visibility  = "public" | "internal" | "private" ;
+
+(* ========== JSON Values (for metadata) ========== *)
+
+json_value  = json_object | json_array | STRING | NUMBER | bool_value | "null" ;
+json_object = "{" [ json_pair { "," json_pair } ] "}" ;
+json_pair   = STRING ":" json_value ;
+json_array  = "[" [ json_value { "," json_value } ] "]" ;
+
+(* ========== Utilities ========== *)
+
+value       = STRING | NUMBER | bool_value | IDENT | json_value ;
