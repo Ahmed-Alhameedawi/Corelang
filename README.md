@@ -3,9 +3,9 @@
 **Compiled Orchestration Runtime Engine**
 *An Agent-Native Programming Language*
 
-[![Tests](https://img.shields.io/badge/tests-39%20passing-brightgreen)]()
-[![Phase](https://img.shields.io/badge/phase-1%20complete-blue)]()
-[![Version](https://img.shields.io/badge/version-0.1.0-orange)]()
+[![Tests](https://img.shields.io/badge/tests-145%20passing-brightgreen)]()
+[![Phase](https://img.shields.io/badge/phase-2%20in%20progress-blue)]()
+[![Version](https://img.shields.io/badge/version-0.2.0-orange)]()
 
 ---
 
@@ -16,9 +16,12 @@ CORE is a compiled programming language designed specifically for AI agents, not
 - 🤖 **Agent-Native Syntax** - Optimized for LLM parsing and generation
 - 🔒 **Security-First** - RBAC and data classification built into the language
 - 📦 **Function-Level Versioning** - Multiple versions coexist with selective rollback
+- 🔄 **Semantic Versioning** - Full semver support with constraint resolution (^, ~, ranges)
+- 🔍 **Breaking Change Detection** - Automatic compatibility analysis between versions
+- 🚀 **Migration System** - Validate and manage multi-step migration paths
 - 🧠 **Rich Metadata** - Every function compiles with intelligence for agent planning
-- 🔌 **MCP Integration** - Direct compilation to Model Context Protocol tools
-- 🔄 **Sync Primitives** - First-class channels and contracts for multi-module coordination
+- 🔌 **MCP Integration** - Direct compilation to Model Context Protocol tools (coming soon)
+- 📊 **Rich Diagnostics** - Helpful error messages with source snippets and hints
 
 ## Quick Start
 
@@ -133,17 +136,27 @@ Types include data classification for compliance:
 
 ## Project Status
 
-**Phase 1: ✅ COMPLETE**
+**Phase 1: ✅ COMPLETE** | **Phase 2: 🚧 80% COMPLETE**
 
-We have successfully completed Phase 1 of the implementation roadmap:
+We have completed Phase 1 and made significant progress on Phase 2:
 
+### Phase 1 - Foundation
 - ✅ Lexer (tokenizer) - 23 tests passing
 - ✅ Parser (AST builder) - 16 tests passing
 - ✅ CLI tool with compile, inspect, and parse commands
 - ✅ Formal grammar specification
 - ✅ Complete AST type system
 
-**Total: 39/39 tests passing**
+### Phase 2 - Versioning System
+- ✅ Semantic versioning (semver) - 36 tests passing
+- ✅ Version registry and resolution - 28 tests passing
+- ✅ Compatibility checker for breaking changes
+- ✅ Migration function system - 19 tests passing
+- ✅ Rich diagnostics system - 9 tests passing
+- ✅ Compiler context with version validation - 14 tests passing
+- ✅ Comprehensive examples (user-service, order-service, calculator)
+
+**Total: 145/145 tests passing**
 
 See [STATUS.md](./STATUS.md) for detailed progress.
 
@@ -216,17 +229,24 @@ npm run format
 
 ```
 compiler/
-├── ast/           # AST type definitions
-├── lexer/         # Tokenizer
-├── parser/        # Parser (tokens → AST)
-├── types/         # Type system (planned)
-└── analyzer/      # Semantic analysis (planned)
+├── ast/              # AST type definitions
+├── lexer/            # Tokenizer
+├── parser/           # Parser (tokens → AST)
+├── diagnostics/      # Rich error system ✅
+├── versioning/       # Version management ✅
+│   ├── semver.ts     # Semantic versioning
+│   ├── registry.ts   # Version registry
+│   ├── compatibility.ts  # Breaking change detection
+│   └── migration.ts  # Migration system
+├── context.ts        # Compiler context ✅
+├── types/            # Type system (planned)
+└── analyzer/         # Semantic analysis (planned)
 
-runtime/           # VM and runtime (planned)
-stdlib/            # Standard library (planned)
-mcp/               # MCP integration (planned)
-tools/             # CLI tools
-examples/          # Example programs
+runtime/              # VM and runtime (planned)
+stdlib/               # Standard library (planned)
+mcp/                  # MCP integration (planned)
+tools/                # CLI tools
+examples/             # Example programs (3 comprehensive examples)
 ```
 
 ## Roadmap
@@ -234,7 +254,12 @@ examples/          # Example programs
 We're following a 10-phase implementation plan:
 
 1. ✅ **Phase 1**: Core Language (Weeks 1-8) - **COMPLETE**
-2. ⏳ **Phase 2**: Versioning System (Weeks 9-12)
+2. 🚧 **Phase 2**: Versioning System (Weeks 9-12) - **80% COMPLETE**
+   - ✅ Semantic versioning with constraint resolution
+   - ✅ Version registry and resolution system
+   - ✅ Breaking change detection
+   - ✅ Migration function system
+   - ⏳ Integration with import system (remaining 20%)
 3. ⏳ **Phase 3**: Security & RBAC (Weeks 13-18)
 4. ⏳ **Phase 4**: Effect System & Runtime (Weeks 19-24)
 5. ⏳ **Phase 5**: Function Intelligence Metadata (Weeks 25-28)

@@ -1,0 +1,30 @@
+; Test file for version evolution
+(mod test
+  :version "1.0.0"
+
+  (fn add :v1
+    :stability deprecated
+    :rollback-safe true
+    :requires []
+    :inputs [(a :int) (b :int)]
+    :outputs [(result :int)]
+    :pure true
+    (body (+ a b)))
+
+  (fn add :v2
+    :stability stable
+    :rollback-safe true
+    :requires []
+    :inputs [(a :float) (b :float)]
+    :outputs [(result :float)]
+    :pure true
+    (body (+ a b)))
+
+  (fn add :v3
+    :stability beta
+    :rollback-safe true
+    :requires []
+    :inputs [(a :float) (b :float)]
+    :outputs [(result :float)]
+    :pure true
+    (body (+ a b))))
