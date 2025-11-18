@@ -1,0 +1,157 @@
+; Order Service Example
+; Demonstrates: module imports, event subscriptions, versioned types
+
+(mod order.service
+  :version "1.0.0"
+  :tenant "acme.corp"
+
+  ; Import user service
+  (import user.service
+    :version "^2.0.0"
+    :functions [(get :v2)]
+    :channels [(user.events :subscribe)])
+
+  ; Security
+  (role order-manager
+    :perms [order.read order.write order.cancel])
+
+  (role customer
+    :perms [order.read])
+
+  ; Types
+  (type OrderStatus :v1
+    :stability stable
+    :variants [
+      Pending
+      Processing
+      Shipped
+      Delivered
+      Cancelled])
+
+  (type OrderItem :v1
+    :stability stable
+    :fields [
+      (product_id :uuid :classify :public)
+      (quantity :int :classify :public)
+      (price :float :classify :internal)])
+
+  (type Order :v1
+    :stability stable
+    :fields [
+      (id :uuid :classify :public)
+      (user_id :uuid :classify :internal)
+      (items (List OrderItem:v1) :classify :internal)
+      (status OrderStatus:v1 :classify :public)
+      (total :float :classify :internal)
+      (created_at :timestamp :classify :public)])
+
+  ; Functions
+  (fn create :v1
+    :stability stable
+    :rollback-safe false
+
+    :requires [customer]
+    :inputs [
+      (user_id :uuid)
+      (items (List OrderItem:v1))]
+    :outputs [(result (Result Order:v1 Error))]
+    :effects [
+      (db.write "orders")
+      (db.write "order_items")
+      (event.emit "order.events")]
+
+    :doc "Create a new order"
+
+    :decomposition {
+      :steps [
+        "Validate user exists"
+        "Validate items"
+        "Calculate total"
+        "Create order record"
+        "Emit order created event"]}
+
+    (body
+      (do
+        ; Validate user exists
+        (match (user.service.get:v2 user_id)
+          [(Err e) (Err e)]
+          [(Ok user)
+            (let [total (calculate-total items)
+                  order_id (uuid.new)
+                  order {
+                    :id order_id
+                    :user_id user_id
+                    :items items
+                    :status Pending
+                    :total total
+                    :created_at (now)}]
+              (do
+                (db.insert "orders" order)
+                (db.insert-many "order_items"
+                  (map #(assoc % :order_id order_id) items))
+                (events.emit "order.events"
+                  (OrderCreated order_id user_id total))
+                (Ok order)))]))))
+
+  (fn get :v1
+    :stability stable
+    :rollback-safe true
+
+    :requires [customer]
+    :inputs [(order_id :uuid)]
+    :outputs [(result (Result Order:v1 Error))]
+    :effects [(db.read "orders")]
+
+    :idempotent true
+    :pure false
+    :doc "Get order by ID"
+
+    (body
+      (let [row (db.query "SELECT * FROM orders WHERE id = ?" order_id)]
+        (if (nil? row)
+          (Err (NotFound "Order not found"))
+          (Ok (Order:v1.from_row row))))))
+
+  (fn cancel :v1
+    :stability stable
+    :rollback-safe false
+
+    :requires [order-manager]
+    :audit-required true
+
+    :inputs [(order_id :uuid) (reason :string)]
+    :outputs [(result (Result Unit Error))]
+    :effects [(db.write "orders") (event.emit "order.events")]
+
+    :doc "Cancel an order"
+
+    (body
+      (do
+        (db.execute
+          "UPDATE orders SET status = 'Cancelled' WHERE id = ?"
+          order_id)
+        (events.emit "order.events"
+          (OrderCancelled order_id reason (now)))
+        (Ok Unit))))
+
+  ; Event handlers
+  (fn handle-user-deleted :v1
+    :stability stable
+    :requires [user.events.read]
+    :inputs [(event UserDeleted)]
+    :outputs [(result (Result Unit Error))]
+    :effects [(db.write "orders")]
+
+    :doc "Handle user deletion by anonymizing their orders"
+
+    (body
+      (do
+        (db.execute
+          "UPDATE orders SET user_id = NULL WHERE user_id = ?"
+          (get event :user_id))
+        (Ok Unit))))
+
+  ; Subscribe to user deletion events
+  (subscribe user.service.user.events
+    :event UserDeleted
+    :handler handle-user-deleted))

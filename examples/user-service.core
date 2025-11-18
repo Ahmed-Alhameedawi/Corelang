@@ -1,0 +1,142 @@
+; User Service Example
+; Demonstrates: versioning, security, data classification, effects
+
+(mod user.service
+  :version "2.0.0"
+  :tenant "acme.corp"
+
+  ; Security definitions
+  (role admin
+    :perms [user.read user.write user.delete]
+    :inherits [])
+
+  (role viewer
+    :perms [user.read])
+
+  (policy default
+    :rules [
+      (allow admin [user.read user.write user.delete] :all-versions)
+      (allow viewer [user.read] :stable-only)])
+
+  ; Type definitions with versioning and classification
+  (type User :v1
+    :stability deprecated
+    :fields [
+      (id :string :classify :public)
+      (name :string :classify :public)
+      (email :string :classify :internal)])
+
+  (type User :v2
+    :replaces :v1
+    :stability stable
+    :fields [
+      (id :uuid :classify :public)
+      (name :string :classify :public)
+      (email :string :classify :internal)
+      (created_at :timestamp :classify :public)
+      (password_hash :string :classify :restricted)])
+
+  ; Function v1 (deprecated)
+  (fn get :v1
+    :stability deprecated
+    :deprecated-since "2024-12-01"
+    :replacement "get:v2"
+    :rollback-safe true
+
+    :requires [viewer]
+    :inputs [(user_id :string)]
+    :outputs [(result (Result User:v1 Error))]
+    :effects [(db.read "users")]
+
+    :doc "Get user by ID (v1 - deprecated)"
+
+    (body
+      (let [row (db.query "SELECT * FROM users WHERE id = ?" user_id)]
+        (if (nil? row)
+          (Err (NotFound "User not found"))
+          (Ok (User:v1.from_row row))))))
+
+  ; Function v2 (current stable)
+  (fn get :v2
+    :replaces :v1
+    :stability stable
+    :rollback-safe true
+
+    :requires [viewer]
+    :inputs [(user_id :uuid)]
+    :outputs [(result (Result User:v2 Error))]
+    :effects [(db.read "users") (log "info")]
+
+    :idempotent true
+    :doc "Get user by ID with enhanced validation and audit logging"
+
+    :decomposition {
+      :steps [
+        "Validate UUID format"
+        "Query database"
+        "Parse result"
+        "Log access"]
+      :dependencies ["database" "validators"]}
+
+    :error-taxonomy {
+      :errors [
+        {:type "NotFound" :retryable false :user-fixable true}
+        {:type "DatabaseError" :retryable true :user-fixable false}]}
+
+    (body
+      (do
+        (log.info "Fetching user" {:user_id user_id})
+        (let [row (db.query "SELECT * FROM users WHERE id = ?" user_id)]
+          (if (nil? row)
+            (Err (NotFound "User not found"))
+            (Ok (User:v2.from_row row)))))))
+
+  ; Create function (admin only)
+  (fn create :v1
+    :stability stable
+    :rollback-safe false
+    :rollback-requires "Can be rolled back via delete"
+
+    :requires [admin]
+    :capabilities [db.write]
+    :audit-required true
+
+    :inputs [(name :string) (email :string)]
+    :outputs [(result (Result User:v2 Error))]
+    :effects [(db.write "users") (event.emit "user.events")]
+
+    :doc "Create a new user"
+
+    (body
+      (let [user_id (uuid.new)
+            user {
+              :id user_id
+              :name name
+              :email email
+              :created_at (now)}]
+        (do
+          (db.insert "users" user)
+          (events.emit "user.events" (UserCreated user_id email))
+          (Ok user)))))
+
+  ; Delete function (admin only, high security)
+  (fn delete :v1
+    :stability stable
+    :rollback-safe false
+    :rollback-requires "Destructive operation; requires backup restoration"
+
+    :requires [admin]
+    :audit-required true
+    :handles-secrets false
+
+    :inputs [(user_id :uuid)]
+    :outputs [(result (Result Unit Error))]
+    :effects [(db.write "users") (event.emit "user.events")]
+
+    :doc "Delete a user (destructive operation)"
+
+    (body
+      (do
+        (db.execute "DELETE FROM users WHERE id = ?" user_id)
+        (events.emit "user.events" (UserDeleted user_id (now)))
+        (Ok Unit)))))

@@ -1,0 +1,160 @@
+; Calculator Service Example
+; Demonstrates: function evolution, migration, rollback safety
+
+(mod calculator
+  :version "3.0.0"
+
+  ; Pure calculation functions showing version evolution
+
+  ; Version 1: Basic multiplication
+  (fn multiply :v1.0.0
+    :stability deprecated
+    :deprecated-since "2024-06-01"
+    :rollback-safe true
+
+    :pure true
+    :idempotent true
+
+    :inputs [(a :int) (b :int)]
+    :outputs [(result :int)]
+
+    :doc "Multiply two integers (v1 - simple)"
+
+    (body (* a b)))
+
+  ; Version 2: Added support for floats
+  (fn multiply :v2.0.0
+    :replaces :v1.0.0
+    :stability stable
+    :rollback-safe true
+
+    :pure true
+    :idempotent true
+
+    :inputs [(a :float) (b :float)]
+    :outputs [(result :float)]
+
+    :doc "Multiply two numbers (v2 - supports floats)"
+
+    :breaking-changes ["Input type changed from int to float"]
+
+    (body (* a b)))
+
+  ; Version 3: Added optional rounding
+  (fn multiply :v3.0.0
+    :replaces :v2.0.0
+    :stability beta
+    :rollback-safe true
+
+    :pure true
+    :idempotent true
+
+    :inputs [
+      (a :float)
+      (b :float)
+      (round :bool :optional true)]
+    :outputs [(result :float)]
+
+    :doc "Multiply two numbers with optional rounding (v3 - beta)"
+
+    (body
+      (let [product (* a b)]
+        (if (or (nil? round) (not round))
+          product
+          (math.round product)))))
+
+  ; Division with error handling evolution
+  (fn divide :v1.0.0
+    :stability deprecated
+    :rollback-safe true
+
+    :pure true
+
+    :inputs [(a :int) (b :int)]
+    :outputs [(result :int)]
+
+    :doc "Divide two integers (v1 - no error handling)"
+
+    (body (/ a b)))  ; Can throw divide-by-zero!
+
+  (fn divide :v2.0.0
+    :replaces :v1.0.0
+    :stability stable
+    :rollback-safe true
+
+    :pure true
+
+    :inputs [(a :float) (b :float)]
+    :outputs [(result (Result :float Error))]
+
+    :doc "Divide two numbers with error handling (v2 - safe)"
+
+    :breaking-changes [
+      "Output type changed from int to Result<float, Error>"
+      "Now returns error instead of throwing"]
+
+    :error-taxonomy {
+      :errors [
+        {:type "DivisionByZero" :retryable false :user-fixable true}]}
+
+    (body
+      (if (= b 0.0)
+        (Err (DivisionByZero "Cannot divide by zero"))
+        (Ok (/ a b)))))
+
+  ; Complex calculation showing decomposition
+  (fn calculate-compound-interest :v1.0.0
+    :stability stable
+    :rollback-safe true
+
+    :pure true
+    :idempotent true
+
+    :inputs [
+      (principal :float)
+      (rate :float)
+      (time :float)
+      (compounds-per-year :int)]
+    :outputs [(result :float)]
+
+    :doc "Calculate compound interest"
+
+    :decomposition {
+      :steps [
+        "Validate inputs (principal > 0, rate > 0, time >= 0)"
+        "Calculate rate per compound period"
+        "Calculate number of compounds"
+        "Apply compound interest formula"
+        "Round to 2 decimal places"]}
+
+    :error-taxonomy {
+      :errors [
+        {:type "InvalidInput" :retryable false :user-fixable true}]}
+
+    (body
+      (let [r-per-period (/ rate compounds-per-year)
+            n-compounds (* compounds-per-year time)
+            multiplier (math.pow (+ 1.0 r-per-period) n-compounds)
+            amount (* principal multiplier)]
+        (math.round amount 2))))
+
+  ; Migration functions
+  (fn multiply_v1_to_v2 :v1
+    :pure true
+    :doc "Migrate multiply v1 calls to v2"
+
+    :inputs [(a :int) (b :int)]
+    :outputs [(result :float)]
+
+    (body
+      (multiply:v2.0.0 (int-to-float a) (int-to-float b))))
+
+  (fn divide_v1_to_v2 :v1
+    :pure true
+    :doc "Migrate divide v1 calls to v2"
+
+    :inputs [(a :int) (b :int)]
+    :outputs [(result (Result :float Error))]
+
+    (body
+      (divide:v2.0.0 (int-to-float a) (int-to-float b)))))
