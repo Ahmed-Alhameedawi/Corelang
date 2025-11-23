@@ -7,7 +7,7 @@
 import {
   ModuleNode,
   FunctionNode,
-  ExpressionNode,
+  ExprNode,
   LiteralNode,
   IdentifierNode,
   LetNode,
@@ -30,6 +30,7 @@ import {
   EffectOperand,
 } from './bytecode.js';
 import { Value, ValueFactory } from './value.js';
+import { parseVersion } from '../../compiler/versioning/semver.js';
 
 /**
  * Compilation context
@@ -51,7 +52,11 @@ export class BytecodeCompiler {
   compile(module: ModuleNode): BytecodeModule {
     const functions = new Map<string, BytecodeFunction>();
     const types = new Map();
-    const security = {
+    const security: {
+      roles: any[];
+      permissions: any[];
+      policies: any[];
+    } = {
       roles: [],
       permissions: [],
       policies: [],
@@ -59,13 +64,13 @@ export class BytecodeCompiler {
 
     // Extract security primitives
     for (const element of module.elements) {
-      if (element.type === 'role') {
+      if (element.type === 'Role') {
         security.roles.push(element as any);
-      } else if (element.type === 'permission') {
+      } else if (element.type === 'Permission') {
         security.permissions.push(element as any);
-      } else if (element.type === 'policy') {
+      } else if (element.type === 'Policy') {
         security.policies.push(element as any);
-      } else if (element.type === 'typedef') {
+      } else if (element.type === 'TypeDef') {
         const typedef = element as any;
         types.set(typedef.name, typedef);
       }
@@ -73,10 +78,10 @@ export class BytecodeCompiler {
 
     // Compile functions
     for (const element of module.elements) {
-      if (element.type === 'function') {
+      if (element.type === 'Function') {
         const fn = element as FunctionNode;
         const bytecode = this.compileFunction(fn, module);
-        const key = `${fn.name}:${fn.version}`;
+        const key = `${fn.name}:${fn.version.version}`;
         functions.set(key, bytecode);
       }
     }
@@ -99,13 +104,13 @@ export class BytecodeCompiler {
     const ctx: CompilationContext = {
       module,
       locals: new Map(),
-      argCount: fn.inputs.length,
+      argCount: fn.signature.inputs.length,
       labelStack: [],
     };
 
     // Arguments are already on the stack
     // Map argument names to stack positions
-    fn.inputs.forEach((input, index) => {
+    fn.signature.inputs.forEach((input, index) => {
       ctx.locals.set(input.name, index);
     });
 
@@ -115,15 +120,21 @@ export class BytecodeCompiler {
     // Add implicit return
     builder.emit(OpCode.RETURN);
 
+    // Parse version string to SemanticVersion
+    const parsedVersion = parseVersion(fn.version.version);
+    if (!parsedVersion) {
+      throw new Error(`Invalid version: ${fn.version.version}`);
+    }
+
     return {
       name: fn.name,
-      version: fn.version,
-      arity: fn.inputs.length,
+      version: parsedVersion,
+      arity: fn.signature.inputs.length,
       instructions: builder.build(),
-      requiredRoles: fn.requires || [],
-      effects: (fn.effects || []).map(e => e.effect),
-      pure: fn.pure || false,
-      idempotent: fn.idempotent || false,
+      requiredRoles: fn.security.requiredRoles,
+      effects: fn.effects.map(e => e.effectType),
+      pure: fn.metadata.pure || false,
+      idempotent: fn.metadata.idempotent || false,
       locals: ctx.locals.size,
     };
   }
@@ -133,51 +144,51 @@ export class BytecodeCompiler {
    */
   private compileExpression(
     builder: BytecodeBuilder,
-    expr: ExpressionNode,
+    expr: ExprNode,
     ctx: CompilationContext
   ): void {
     switch (expr.type) {
-      case 'literal':
+      case 'Literal':
         this.compileLiteral(builder, expr as LiteralNode);
         break;
 
-      case 'identifier':
+      case 'Identifier':
         this.compileIdentifier(builder, expr as IdentifierNode, ctx);
         break;
 
-      case 'let':
+      case 'Let':
         this.compileLet(builder, expr as LetNode, ctx);
         break;
 
-      case 'if':
+      case 'If':
         this.compileIf(builder, expr as IfNode, ctx);
         break;
 
-      case 'match':
+      case 'Match':
         this.compileMatch(builder, expr as MatchNode, ctx);
         break;
 
-      case 'cond':
+      case 'Cond':
         this.compileCond(builder, expr as CondNode, ctx);
         break;
 
-      case 'call':
+      case 'Call':
         this.compileCall(builder, expr as CallNode, ctx);
         break;
 
-      case 'do':
+      case 'Do':
         this.compileDo(builder, expr as DoNode, ctx);
         break;
 
-      case 'lambda':
+      case 'Lambda':
         this.compileLambda(builder, expr as LambdaNode, ctx);
         break;
 
-      case 'binary-op':
+      case 'BinaryOp':
         this.compileBinaryOp(builder, expr as BinaryOpNode, ctx);
         break;
 
-      case 'unary-op':
+      case 'UnaryOp':
         this.compileUnaryOp(builder, expr as UnaryOpNode, ctx);
         break;
 
@@ -192,24 +203,25 @@ export class BytecodeCompiler {
   private compileLiteral(builder: BytecodeBuilder, expr: LiteralNode): void {
     let value: Value;
 
-    switch (expr.valueType) {
+    switch (expr.literalType) {
       case 'unit':
         value = ValueFactory.unit();
         break;
-      case 'bool':
+      case 'boolean':
         value = ValueFactory.bool(expr.value as boolean);
         break;
-      case 'int':
-        value = ValueFactory.int(expr.value as number);
-        break;
-      case 'float':
-        value = ValueFactory.float(expr.value as number);
+      case 'number':
+        // Determine if int or float based on the value
+        const num = expr.value as number;
+        value = Number.isInteger(num)
+          ? ValueFactory.int(num)
+          : ValueFactory.float(num);
         break;
       case 'string':
         value = ValueFactory.string(expr.value as string);
         break;
       default:
-        throw new Error(`Unknown literal type: ${expr.valueType}`);
+        throw new Error(`Unknown literal type: ${expr.literalType}`);
     }
 
     builder.emit(OpCode.PUSH, value);
@@ -242,18 +254,28 @@ export class BytecodeCompiler {
    * Compile a let binding
    */
   private compileLet(builder: BytecodeBuilder, expr: LetNode, ctx: CompilationContext): void {
-    // Compile the value expression
-    this.compileExpression(builder, expr.value, ctx);
+    // Compile all bindings
+    for (const binding of expr.bindings) {
+      // Compile the value expression
+      this.compileExpression(builder, binding.value, ctx);
 
-    // Store in local variable
-    const localIndex = ctx.locals.size;
-    ctx.locals.set(expr.binding, localIndex);
-    builder.emit(OpCode.STORE_VAR, expr.binding);
+      // Store in local variable
+      const localIndex = ctx.locals.size;
+      ctx.locals.set(binding.name, localIndex);
+      builder.emit(OpCode.STORE_VAR, binding.name);
+    }
 
-    // Compile the body with the new binding
-    this.compileExpression(builder, expr.body, ctx);
+    // Compile the body expressions
+    for (let i = 0; i < expr.body.length; i++) {
+      this.compileExpression(builder, expr.body[i], ctx);
 
-    // Clean up local (will be handled by scope management in VM)
+      // Pop intermediate results except the last one
+      if (i < expr.body.length - 1) {
+        builder.emit(OpCode.POP);
+      }
+    }
+
+    // Clean up locals (will be handled by scope management in VM)
   }
 
   /**
@@ -270,12 +292,12 @@ export class BytecodeCompiler {
     builder.emitJump(OpCode.JUMP_IF_FALSE, elseLabel);
 
     // Compile then branch
-    this.compileExpression(builder, expr.then, ctx);
+    this.compileExpression(builder, expr.thenBranch, ctx);
     builder.emitJump(OpCode.JUMP, endLabel);
 
     // Compile else branch
     builder.placeLabel(elseLabel);
-    this.compileExpression(builder, expr.else, ctx);
+    this.compileExpression(builder, expr.elseBranch, ctx);
 
     builder.placeLabel(endLabel);
   }
@@ -285,27 +307,27 @@ export class BytecodeCompiler {
    */
   private compileMatch(builder: BytecodeBuilder, expr: MatchNode, ctx: CompilationContext): void {
     // Compile the expression to match on
-    this.compileExpression(builder, expr.expr, ctx);
+    this.compileExpression(builder, expr.value, ctx);
 
     const endLabel = builder.newLabel();
 
-    for (let i = 0; i < expr.cases.length; i++) {
-      const matchCase = expr.cases[i];
+    for (let i = 0; i < expr.clauses.length; i++) {
+      const matchClause = expr.clauses[i];
       const nextLabel = builder.newLabel();
 
       // Duplicate value for matching
-      if (i < expr.cases.length - 1) {
+      if (i < expr.clauses.length - 1) {
         builder.emit(OpCode.DUP);
       }
 
       // Match pattern
-      this.compilePattern(builder, matchCase.pattern, ctx);
+      this.compilePattern(builder, matchClause.pattern, ctx);
 
       // If match fails, jump to next case
       builder.emitJump(OpCode.JUMP_IF_FALSE, nextLabel);
 
       // Compile case body
-      this.compileExpression(builder, matchCase.body, ctx);
+      this.compileExpression(builder, matchClause.body, ctx);
       builder.emitJump(OpCode.JUMP, endLabel);
 
       builder.placeLabel(nextLabel);
@@ -328,11 +350,11 @@ export class BytecodeCompiler {
       // Literal pattern
       builder.emit(OpCode.PUSH, ValueFactory.string(pattern));
       builder.emit(OpCode.EQ);
-    } else if (pattern.type === 'variant-pattern') {
+    } else if (pattern.type === 'ConstructorPattern') {
       // Variant pattern matching
       builder.emit(OpCode.MATCH_VARIANT, {
-        typeName: pattern.typeName,
-        variant: pattern.variant,
+        typeName: pattern.constructor,
+        variant: pattern.constructor,
       });
     } else {
       // Wildcard or binding pattern - always matches
@@ -373,8 +395,12 @@ export class BytecodeCompiler {
    * Compile a function call
    */
   private compileCall(builder: BytecodeBuilder, expr: CallNode, ctx: CompilationContext): void {
+    // Get function name from QualifiedNameNode
+    const fnName = expr.function.parts.join('.');
+    const fnVersion = expr.function.version;
+
     // Check if this is an effect
-    if (this.isEffect(expr.fn)) {
+    if (this.isEffect(fnName)) {
       this.compileEffectCall(builder, expr, ctx);
       return;
     }
@@ -384,17 +410,14 @@ export class BytecodeCompiler {
       this.compileExpression(builder, arg, ctx);
     }
 
-    // Parse function name and version
-    const [name, version] = this.parseFunctionRef(expr.fn);
-
     const operand: CallOperand = {
-      name,
-      version,
+      name: fnName,
+      version: fnVersion,
       arity: expr.args.length,
     };
 
     // Check if it's a standard library function
-    if (name.includes('.')) {
+    if (fnName.includes('.')) {
       builder.emit(OpCode.CALL_NATIVE, operand);
     } else {
       builder.emit(OpCode.CALL, operand);
@@ -414,8 +437,11 @@ export class BytecodeCompiler {
       this.compileExpression(builder, arg, ctx);
     }
 
+    // Get function name from QualifiedNameNode
+    const fnName = expr.function.parts.join('.');
+
     // Parse effect: e.g., "db.read" -> handler="db", operation="read"
-    const [handler, operation] = expr.fn.split('.');
+    const [handler, operation] = fnName.split('.');
 
     const operand: EffectOperand = {
       handler,
@@ -546,16 +572,5 @@ export class BytecodeCompiler {
   private isEffect(name: string): boolean {
     const effectPrefixes = ['db.', 'http.', 'fs.', 'log.', 'event.'];
     return effectPrefixes.some(prefix => name.startsWith(prefix));
-  }
-
-  /**
-   * Parse function reference into name and version
-   */
-  private parseFunctionRef(ref: string): [string, string | undefined] {
-    const parts = ref.split(':');
-    if (parts.length === 2) {
-      return [parts[0], parts[1]];
-    }
-    return [ref, undefined];
   }
 }

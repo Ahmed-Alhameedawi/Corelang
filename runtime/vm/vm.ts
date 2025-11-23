@@ -138,11 +138,7 @@ export class VM {
     this.checkSecurity(fn, principal, module);
 
     // Initialize VM state
-    const policyEvaluator = new PolicyEvaluator(
-      this.securityContext.roles,
-      this.securityContext.permissions,
-      this.securityContext.policies
-    );
+    const policyEvaluator = new PolicyEvaluator(this.securityContext);
 
     const state: VMState = {
       stack: [],
