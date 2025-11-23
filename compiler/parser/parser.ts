@@ -9,6 +9,11 @@ import {
   ElementNode,
   FunctionNode,
   TypeDefNode,
+  RoleNode,
+  PermissionNode,
+  PolicyNode,
+  RuleNode,
+  ScopeItem,
   ExprNode,
   LiteralNode,
   IdentifierNode,
@@ -89,6 +94,12 @@ export class Parser {
         return this.parseFunction();
       case TokenType.TYPE:
         return this.parseTypeDef();
+      case TokenType.ROLE:
+        return this.parseRole();
+      case TokenType.PERM:
+        return this.parsePermission();
+      case TokenType.POLICY:
+        return this.parsePolicy();
       default:
         throw new ParseError(
           `Expected element definition, got ${tokenType}`,
@@ -259,6 +270,175 @@ export class Parser {
       version,
       fields,
       metadata,
+    };
+  }
+
+  /**
+   * Parse a role definition
+   */
+  private parseRole(): RoleNode {
+    this.expect(TokenType.ROLE);
+    const name = this.expect(TokenType.IDENTIFIER).value;
+
+    let permissions: string[] = [];
+    let inherits: string[] = [];
+
+    // Parse attributes
+    while (!this.check(TokenType.RPAREN) && !this.isAtEnd()) {
+      if (this.checkKeyword(':perms')) {
+        this.advance();
+        permissions = this.parseStringList();
+      } else if (this.checkKeyword(':inherits')) {
+        this.advance();
+        inherits = this.parseStringList();
+      } else {
+        break;
+      }
+    }
+
+    this.expect(TokenType.RPAREN);
+
+    return {
+      type: 'Role',
+      name,
+      permissions,
+      inherits,
+    };
+  }
+
+  /**
+   * Parse a permission definition
+   */
+  private parsePermission(): PermissionNode {
+    this.expect(TokenType.PERM);
+    const name = this.parseQualifiedIdentifier();
+
+    let description: string | undefined;
+    let scope: ScopeItem[] | undefined;
+    let classification: ClassificationLevel | undefined;
+    let auditRequired = false;
+
+    // Parse attributes
+    while (!this.check(TokenType.RPAREN) && !this.isAtEnd()) {
+      if (this.checkKeyword(':doc')) {
+        this.advance();
+        description = this.expect(TokenType.STRING).value.slice(1, -1);
+      } else if (this.checkKeyword(':scope')) {
+        this.advance();
+        scope = this.parseScopeList();
+      } else if (this.checkKeyword(':classify')) {
+        this.advance();
+        classification = this.parseClassification();
+      } else if (this.checkKeyword(':audit-required')) {
+        this.advance();
+        auditRequired = this.parseBoolean();
+      } else {
+        break;
+      }
+    }
+
+    this.expect(TokenType.RPAREN);
+
+    return {
+      type: 'Permission',
+      name,
+      description,
+      scope,
+      classification,
+      auditRequired,
+    };
+  }
+
+  /**
+   * Parse a policy definition
+   */
+  private parsePolicy(): PolicyNode {
+    this.expect(TokenType.POLICY);
+    const name = this.expect(TokenType.IDENTIFIER).value;
+
+    let description: string | undefined;
+    const rules: RuleNode[] = [];
+
+    // Parse attributes
+    while (!this.check(TokenType.RPAREN) && !this.isAtEnd()) {
+      if (this.checkKeyword(':doc')) {
+        this.advance();
+        description = this.expect(TokenType.STRING).value.slice(1, -1);
+      } else if (this.checkKeyword(':rules')) {
+        this.advance();
+        this.expect(TokenType.LBRACKET);
+        while (!this.check(TokenType.RBRACKET) && !this.isAtEnd()) {
+          rules.push(this.parseRule());
+        }
+        this.expect(TokenType.RBRACKET);
+      } else {
+        break;
+      }
+    }
+
+    this.expect(TokenType.RPAREN);
+
+    return {
+      type: 'Policy',
+      name,
+      description,
+      rules,
+    };
+  }
+
+  /**
+   * Parse a policy rule
+   */
+  private parseRule(): RuleNode {
+    this.expect(TokenType.LPAREN);
+
+    // Parse effect (allow or deny)
+    const effectToken = this.expect(TokenType.IDENTIFIER).value;
+    if (effectToken !== 'allow' && effectToken !== 'deny') {
+      throw new ParseError(`Expected 'allow' or 'deny', got '${effectToken}'`, this.peek());
+    }
+    const effect = effectToken as 'allow' | 'deny';
+
+    // Parse roles list
+    const roles = this.parseStringList();
+
+    // Parse permissions list
+    const permissions = this.parseStringList();
+
+    // Parse optional version constraint
+    let versionConstraint: any = undefined;
+    if (this.checkKeyword(':all-versions')) {
+      this.advance();
+      versionConstraint = { type: 'all' };
+    } else if (this.checkKeyword(':stable-only')) {
+      this.advance();
+      versionConstraint = { type: 'stable-only' };
+    } else if (this.checkKeyword(':versions')) {
+      this.advance();
+      const versions = this.parseVersionList();
+      versionConstraint = { type: 'specific', versions };
+    } else if (this.checkKeyword(':range')) {
+      this.advance();
+      const range = this.expect(TokenType.STRING).value.slice(1, -1);
+      versionConstraint = { type: 'range', range };
+    }
+
+    // Parse optional reason
+    let reason: string | undefined;
+    if (this.checkKeyword(':reason')) {
+      this.advance();
+      reason = this.expect(TokenType.STRING).value.slice(1, -1);
+    }
+
+    this.expect(TokenType.RPAREN);
+
+    return {
+      type: 'Rule',
+      effect,
+      roles,
+      permissions,
+      versionConstraint,
+      reason,
     };
   }
 
@@ -756,6 +936,39 @@ export class Parser {
         value += '.' + this.expect(TokenType.IDENTIFIER).value;
       }
       list.push(value);
+    }
+
+    this.expect(TokenType.RBRACKET);
+    return list;
+  }
+
+  private parseVersionList(): string[] {
+    const list: string[] = [];
+    this.expect(TokenType.LBRACKET);
+
+    while (!this.check(TokenType.RBRACKET) && !this.isAtEnd()) {
+      // Parse string literals for version numbers
+      const value = this.expect(TokenType.STRING).value.slice(1, -1); // Remove quotes
+      list.push(value);
+    }
+
+    this.expect(TokenType.RBRACKET);
+    return list;
+  }
+
+  private parseScopeList(): ScopeItem[] {
+    const list: ScopeItem[] = [];
+    this.expect(TokenType.LBRACKET);
+
+    while (!this.check(TokenType.RBRACKET) && !this.isAtEnd()) {
+      this.expect(TokenType.LPAREN);
+      const type = this.expect(TokenType.IDENTIFIER).value;
+      if (type !== 'resource' && type !== 'action') {
+        throw new ParseError(`Expected 'resource' or 'action', got '${type}'`, this.peek());
+      }
+      const value = this.expect(TokenType.STRING).value.slice(1, -1);
+      this.expect(TokenType.RPAREN);
+      list.push({ type: type as 'resource' | 'action', value });
     }
 
     this.expect(TokenType.RBRACKET);

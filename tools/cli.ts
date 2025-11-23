@@ -83,7 +83,8 @@ program
   .description('Inspect a compiled CORE module')
   .option('-v, --versions', 'Show detailed version information')
   .option('-d, --diagnostics', 'Show compilation diagnostics')
-  .action((file: string, options: { versions?: boolean; diagnostics?: boolean }) => {
+  .option('-s, --security', 'Show security information (roles, permissions, policies)')
+  .action((file: string, options: { versions?: boolean; diagnostics?: boolean; security?: boolean }) => {
     try {
       const source = fs.readFileSync(file, 'utf-8');
       const tokens = tokenize(source);
@@ -146,6 +147,26 @@ program
           if (type.version?.replaces && type.version.replaces.length > 0) {
             console.log(`   Replaces: ${type.version.replaces.join(', ')}`);
           }
+        } else if (element.type === 'Role') {
+          const role = element as any;
+          console.log(`\n${index + 1}. Role: ${role.name}`);
+          console.log(`   Permissions: ${role.permissions.join(', ') || 'none'}`);
+          console.log(`   Inherits: ${role.inherits.join(', ') || 'none'}`);
+        } else if (element.type === 'Permission') {
+          const perm = element as any;
+          console.log(`\n${index + 1}. Permission: ${perm.name}`);
+          if (perm.description) {
+            console.log(`   Description: ${perm.description}`);
+          }
+          console.log(`   Classification: ${perm.classification || 'unspecified'}`);
+          console.log(`   Audit required: ${perm.auditRequired ? 'yes' : 'no'}`);
+        } else if (element.type === 'Policy') {
+          const policy = element as any;
+          console.log(`\n${index + 1}. Policy: ${policy.name}`);
+          if (policy.description) {
+            console.log(`   Description: ${policy.description}`);
+          }
+          console.log(`   Rules: ${policy.rules.length}`);
         }
       });
 
@@ -198,6 +219,74 @@ program
             }
           });
         }
+      }
+
+      // Show security information if requested
+      if (options.security) {
+        const roles = ast.elements.filter((e: any) => e.type === 'Role');
+        const perms = ast.elements.filter((e: any) => e.type === 'Permission');
+        const policies = ast.elements.filter((e: any) => e.type === 'Policy');
+
+        console.log('\n\nSecurity Model:');
+        console.log('===============');
+
+        if (roles.length > 0) {
+          console.log('\nRoles:');
+          roles.forEach((role: any) => {
+            console.log(`\n  ${role.name}:`);
+            console.log(`    Direct permissions: ${role.permissions.length}`);
+            if (role.permissions.length > 0) {
+              console.log(`      - ${role.permissions.join('\n      - ')}`);
+            }
+            if (role.inherits.length > 0) {
+              console.log(`    Inherits from: ${role.inherits.join(', ')}`);
+            }
+          });
+        }
+
+        if (perms.length > 0) {
+          console.log('\nPermissions:');
+          perms.forEach((perm: any) => {
+            console.log(`\n  ${perm.name}:`);
+            if (perm.description) {
+              console.log(`    Description: ${perm.description}`);
+            }
+            console.log(`    Classification: ${perm.classification || 'unspecified'}`);
+            console.log(`    Audit required: ${perm.auditRequired ? 'yes' : 'no'}`);
+          });
+        }
+
+        if (policies.length > 0) {
+          console.log('\nPolicies:');
+          policies.forEach((policy: any) => {
+            console.log(`\n  ${policy.name}:`);
+            if (policy.description) {
+              console.log(`    Description: ${policy.description}`);
+            }
+            console.log(`    Rules: ${policy.rules.length}`);
+            policy.rules.forEach((rule: any, i: number) => {
+              const effect = rule.effect === 'allow' ? '✓ ALLOW' : '✗ DENY';
+              console.log(`      ${i + 1}. ${effect}: ${rule.roles.join(', ')} → [${rule.permissions.join(', ')}]`);
+              if (rule.versionConstraint) {
+                const vc = rule.versionConstraint;
+                const constraint = vc.type === 'all' ? 'all versions' :
+                                  vc.type === 'stable-only' ? 'stable only' :
+                                  vc.type === 'specific' ? `versions: ${vc.versions.join(', ')}` :
+                                  `range: ${vc.range}`;
+                console.log(`         Constraint: ${constraint}`);
+              }
+            });
+          });
+        }
+
+        // Show security coverage
+        const functionsWithSecurity = ast.elements.filter((e: any) =>
+          e.type === 'Function' && (e.security.requiredRoles.length > 0 || e.security.auditRequired));
+
+        console.log('\n\nSecurity Coverage:');
+        console.log(`  Total functions: ${ast.elements.filter((e: any) => e.type === 'Function').length}`);
+        console.log(`  Functions with security: ${functionsWithSecurity.length}`);
+        console.log(`  Functions requiring audit: ${ast.elements.filter((e: any) => e.type === 'Function' && e.security.auditRequired).length}`);
       }
 
       console.log('\n');

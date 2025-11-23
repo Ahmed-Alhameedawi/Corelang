@@ -3,9 +3,9 @@
 **Compiled Orchestration Runtime Engine**
 *An Agent-Native Programming Language*
 
-[![Tests](https://img.shields.io/badge/tests-145%20passing-brightgreen)]()
-[![Phase](https://img.shields.io/badge/phase-2%20in%20progress-blue)]()
-[![Version](https://img.shields.io/badge/version-0.2.0-orange)]()
+[![Tests](https://img.shields.io/badge/tests-180%20passing-brightgreen)]()
+[![Phase](https://img.shields.io/badge/phase-3%20in%20progress-blue)]()
+[![Version](https://img.shields.io/badge/version-0.3.0-orange)]()
 
 ---
 
@@ -15,6 +15,7 @@ CORE is a compiled programming language designed specifically for AI agents, not
 
 - 🤖 **Agent-Native Syntax** - Optimized for LLM parsing and generation
 - 🔒 **Security-First** - RBAC and data classification built into the language
+- 🛡️ **Runtime Policy Evaluation** - Dynamic access control decisions with deny-takes-precedence
 - 📦 **Function-Level Versioning** - Multiple versions coexist with selective rollback
 - 🔄 **Semantic Versioning** - Full semver support with constraint resolution (^, ~, ranges)
 - 🔍 **Breaking Change Detection** - Automatic compatibility analysis between versions
@@ -136,13 +137,13 @@ Types include data classification for compliance:
 
 ## Project Status
 
-**Phase 1: ✅ COMPLETE** | **Phase 2: 🚧 80% COMPLETE**
+**Phase 1: ✅ COMPLETE** | **Phase 2: ✅ COMPLETE** | **Phase 3: 🚧 IN PROGRESS**
 
-We have completed Phase 1 and made significant progress on Phase 2:
+We have completed Phase 1 and Phase 2, and are actively working on Phase 3:
 
 ### Phase 1 - Foundation
 - ✅ Lexer (tokenizer) - 23 tests passing
-- ✅ Parser (AST builder) - 16 tests passing
+- ✅ Parser (AST builder) - 24 tests passing (includes 8 security tests)
 - ✅ CLI tool with compile, inspect, and parse commands
 - ✅ Formal grammar specification
 - ✅ Complete AST type system
@@ -156,7 +157,19 @@ We have completed Phase 1 and made significant progress on Phase 2:
 - ✅ Compiler context with version validation - 14 tests passing
 - ✅ Comprehensive examples (user-service, order-service, calculator)
 
-**Total: 145/145 tests passing**
+### Phase 3 - Security & RBAC
+- ✅ Security primitive parsing (role, perm, policy) - 8 new parser tests
+- ✅ Security analyzer with access control verification - 15 tests passing
+- ✅ Role inheritance and permission resolution
+- ✅ Data classification system (public, internal, confidential, restricted)
+- ✅ Static security analysis (undefined role detection, circular inheritance, etc.)
+- ✅ CLI security inspection (--security flag)
+- ✅ Compiler context integration
+- ✅ Runtime policy evaluation engine - 12 tests passing
+- ✅ Comprehensive banking example
+- ✅ Hospital policy evaluation example
+
+**Total: 180/180 tests passing (100% success rate)**
 
 See [STATUS.md](./STATUS.md) for detailed progress.
 
@@ -181,6 +194,15 @@ npm run core compile hello.core
 
 # Inspect module information
 npm run core inspect hello.core
+
+# Inspect with version details
+npm run core inspect hello.core --versions
+
+# Inspect with security information
+npm run core inspect hello.core --security
+
+# Inspect with diagnostics
+npm run core inspect hello.core --diagnostics
 ```
 
 ## Example Output

@@ -9,6 +9,7 @@ import { MigrationRegistry } from './versioning/migration';
 import { DiagnosticBuilder } from './diagnostics/diagnostic';
 import { checkFunctionCompatibility, checkTypeCompatibility } from './versioning/compatibility';
 import { parseVersion, parseConstraint } from './versioning/semver';
+import { SecurityContext, SecurityAnalyzer } from './security/analyzer';
 
 /**
  * Compilation options
@@ -18,6 +19,7 @@ export interface CompilerOptions {
   warnOnDeprecated?: boolean;
   requireMigrations?: boolean;
   allowUnstableVersions?: boolean;
+  enableSecurityAnalysis?: boolean;
 }
 
 /**
@@ -27,6 +29,8 @@ export class CompilerContext {
   public versionRegistry: ModuleVersionRegistry;
   public migrationRegistry: MigrationRegistry;
   public diagnostics: DiagnosticBuilder;
+  public securityContext: SecurityContext;
+  public securityAnalyzer: SecurityAnalyzer;
   public options: CompilerOptions;
 
   private modules: Map<string, ModuleNode>;
@@ -36,11 +40,14 @@ export class CompilerContext {
     this.versionRegistry = new ModuleVersionRegistry();
     this.migrationRegistry = new MigrationRegistry();
     this.diagnostics = new DiagnosticBuilder();
+    this.securityContext = new SecurityContext();
+    this.securityAnalyzer = new SecurityAnalyzer(this.securityContext, this.diagnostics);
     this.options = {
       strictVersioning: true,
       warnOnDeprecated: true,
       requireMigrations: false,
       allowUnstableVersions: false,
+      enableSecurityAnalysis: true,
       ...options,
     };
     this.modules = new Map();
@@ -89,6 +96,11 @@ export class CompilerContext {
 
     // Register only valid versions with version registry
     this.versionRegistry.registerModule({ functions: validFunctions, types: validTypes });
+
+    // Run security analysis if enabled
+    if (this.options.enableSecurityAnalysis) {
+      this.securityAnalyzer.analyzeModule(module);
+    }
   }
 
   /**
@@ -325,6 +337,7 @@ export class CompilerContext {
     this.versionRegistry.clear();
     this.migrationRegistry.clear();
     this.diagnostics = new DiagnosticBuilder();
+    this.securityContext.clear();
     this.modules.clear();
     this.currentModule = undefined;
   }

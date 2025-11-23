@@ -1,0 +1,128 @@
+; Secure Banking System - Demonstrates CORE Security Features
+(mod secure.banking
+  :version "1.0.0"
+
+  ; ========== Permissions ==========
+
+  (perm account.read
+    :doc "Read account information"
+    :classify :internal
+    :audit-required false)
+
+  (perm account.write
+    :doc "Modify account information"
+    :classify :confidential
+    :audit-required true)
+
+  (perm account.delete
+    :doc "Delete accounts"
+    :classify :restricted
+    :audit-required true)
+
+  (perm transaction.create
+    :doc "Create transactions"
+    :classify :confidential
+    :audit-required true)
+
+  ; ========== Roles ==========
+
+  (role customer
+    :perms [account.read])
+
+  (role teller
+    :perms [transaction.create]
+    :inherits [customer])
+
+  (role manager
+    :perms [account.write]
+    :inherits [teller])
+
+  (role admin
+    :perms [account.delete]
+    :inherits [manager])
+
+  ; ========== Policies ==========
+
+  (policy banking
+    :doc "Main banking access policy"
+    :rules [
+      (allow [customer] [account.read] :all-versions)
+      (allow [teller] [transaction.create] :stable-only)
+      (allow [manager] [account.write] :stable-only)
+      (allow [admin] [account.delete] :stable-only)
+      (deny [customer] [account.write account.delete] :all-versions)])
+
+  ; ========== Data Types ==========
+
+  (type Account :v1
+    :stability stable
+    :fields [
+      (id :uuid :classify :public)
+      (account_number :string :classify :internal)
+      (owner_name :string :classify :internal)
+      (balance :float :classify :confidential)
+      (ssn :string :classify :restricted)])
+
+  (type Transaction :v1
+    :stability stable
+    :fields [
+      (id :uuid :classify :public)
+      (from_account :uuid :classify :internal)
+      (to_account :uuid :classify :internal)
+      (amount :float :classify :confidential)])
+
+  ; ========== Functions ==========
+
+  (fn get_account :v1
+    :stability stable
+    :rollback-safe true
+    :requires [customer]
+    :inputs [(account_id :uuid)]
+    :outputs [(account Account)]
+    :doc "Retrieve account information"
+    (body true))
+
+  (fn get_balance :v1
+    :stability stable
+    :rollback-safe true
+    :requires [customer]
+    :audit-required true
+    :inputs [(account_id :uuid)]
+    :outputs [(balance :float)]
+    :doc "Get account balance"
+    (body 0.0))
+
+  (fn transfer_funds :v1
+    :stability stable
+    :rollback-safe true
+    :requires [teller]
+    :audit-required true
+    :inputs [
+      (from_account :uuid)
+      (to_account :uuid)
+      (amount :float)]
+    :outputs [(result :bool)]
+    :doc "Transfer money between accounts"
+    (body true))
+
+  (fn update_account :v1
+    :stability stable
+    :rollback-safe true
+    :requires [manager]
+    :audit-required true
+    :inputs [
+      (account_id :uuid)
+      (new_name :string)]
+    :outputs [(result :bool)]
+    :doc "Update account information"
+    (body true))
+
+  (fn delete_account :v1
+    :stability stable
+    :rollback-safe false
+    :requires [admin]
+    :audit-required true
+    :inputs [(account_id :uuid)]
+    :outputs [(result :bool)]
+    :doc "Permanently delete an account"
+    (body true)))

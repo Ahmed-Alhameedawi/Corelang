@@ -293,4 +293,166 @@ describe('Parser', () => {
       expect(fn.metadata.doc).toBe('Generate a greeting message');
     });
   });
+
+  describe('Security Primitive Parsing', () => {
+    test('should parse a role definition', () => {
+      const source = `(mod test
+        (role admin
+          :perms [user.read user.write user.delete]))`;
+
+      const tokens = tokenize(source);
+      const ast = parse(tokens);
+
+      expect(ast.elements).toHaveLength(1);
+      const role = ast.elements[0];
+      expect(role.type).toBe('Role');
+      expect((role as any).name).toBe('admin');
+      expect((role as any).permissions).toEqual(['user.read', 'user.write', 'user.delete']);
+      expect((role as any).inherits).toEqual([]);
+    });
+
+    test('should parse a role with inheritance', () => {
+      const source = `(mod test
+        (role superadmin
+          :perms [system.admin]
+          :inherits [admin viewer]))`;
+
+      const tokens = tokenize(source);
+      const ast = parse(tokens);
+
+      const role = ast.elements[0] as any;
+      expect(role.name).toBe('superadmin');
+      expect(role.permissions).toEqual(['system.admin']);
+      expect(role.inherits).toEqual(['admin', 'viewer']);
+    });
+
+    test('should parse a permission definition', () => {
+      const source = `(mod test
+        (perm user.write
+          :doc "Write user data"
+          :classify :confidential
+          :audit-required true))`;
+
+      const tokens = tokenize(source);
+      const ast = parse(tokens);
+
+      expect(ast.elements).toHaveLength(1);
+      const perm = ast.elements[0];
+      expect(perm.type).toBe('Permission');
+      expect((perm as any).name).toBe('user.write');
+      expect((perm as any).description).toBe('Write user data');
+      expect((perm as any).classification).toBe('confidential');
+      expect((perm as any).auditRequired).toBe(true);
+    });
+
+    test('should parse a permission with scope', () => {
+      const source = `(mod test
+        (perm db.read
+          :scope [(resource "users") (action "SELECT")]
+          :audit-required false))`;
+
+      const tokens = tokenize(source);
+      const ast = parse(tokens);
+
+      const perm = ast.elements[0] as any;
+      expect(perm.name).toBe('db.read');
+      expect(perm.scope).toHaveLength(2);
+      expect(perm.scope[0]).toEqual({ type: 'resource', value: 'users' });
+      expect(perm.scope[1]).toEqual({ type: 'action', value: 'SELECT' });
+      expect(perm.auditRequired).toBe(false);
+    });
+
+    test('should parse a policy definition', () => {
+      const source = `(mod test
+        (policy default
+          :doc "Default access policy"
+          :rules [
+            (allow [admin] [user.read user.write] :all-versions)
+            (deny [viewer] [user.delete] :stable-only)]))`;
+
+      const tokens = tokenize(source);
+      const ast = parse(tokens);
+
+      expect(ast.elements).toHaveLength(1);
+      const policy = ast.elements[0];
+      expect(policy.type).toBe('Policy');
+      expect((policy as any).name).toBe('default');
+      expect((policy as any).description).toBe('Default access policy');
+      expect((policy as any).rules).toHaveLength(2);
+
+      const rule1 = (policy as any).rules[0];
+      expect(rule1.effect).toBe('allow');
+      expect(rule1.roles).toEqual(['admin']);
+      expect(rule1.permissions).toEqual(['user.read', 'user.write']);
+      expect(rule1.versionConstraint).toEqual({ type: 'all' });
+
+      const rule2 = (policy as any).rules[1];
+      expect(rule2.effect).toBe('deny');
+      expect(rule2.roles).toEqual(['viewer']);
+      expect(rule2.permissions).toEqual(['user.delete']);
+      expect(rule2.versionConstraint).toEqual({ type: 'stable-only' });
+    });
+
+    test('should parse a policy with version range constraints', () => {
+      const source = `(mod test
+        (policy versioned
+          :rules [
+            (allow [admin] [data.read] :versions ["1.0.0" "2.0.0"])
+            (allow [viewer] [data.read] :range ">=1.0.0 <2.0.0")]))`;
+
+      const tokens = tokenize(source);
+      const ast = parse(tokens);
+
+      const policy = ast.elements[0] as any;
+      expect(policy.rules).toHaveLength(2);
+
+      const rule1 = policy.rules[0];
+      expect(rule1.versionConstraint).toEqual({
+        type: 'specific',
+        versions: ['1.0.0', '2.0.0']
+      });
+
+      const rule2 = policy.rules[1];
+      expect(rule2.versionConstraint).toEqual({
+        type: 'range',
+        range: '>=1.0.0 <2.0.0'
+      });
+    });
+
+    test('should parse a policy with reason', () => {
+      const source = `(mod test
+        (policy restricted
+          :rules [
+            (deny [contractor] [system.admin] :all-versions :reason "Contractors cannot have admin access")]))`;
+
+      const tokens = tokenize(source);
+      const ast = parse(tokens);
+
+      const policy = ast.elements[0] as any;
+      const rule = policy.rules[0];
+      expect(rule.reason).toBe('Contractors cannot have admin access');
+    });
+
+    test('should parse a module with mixed elements', () => {
+      const source = `(mod security
+        (role admin :perms [user.write])
+        (perm user.write :audit-required true)
+        (policy default
+          :rules [(allow [admin] [user.write] :all-versions)])
+        (fn process :v1
+          :requires [admin]
+          :inputs []
+          :outputs []
+          (body true)))`;
+
+      const tokens = tokenize(source);
+      const ast = parse(tokens);
+
+      expect(ast.elements).toHaveLength(4);
+      expect(ast.elements[0].type).toBe('Role');
+      expect(ast.elements[1].type).toBe('Permission');
+      expect(ast.elements[2].type).toBe('Policy');
+      expect(ast.elements[3].type).toBe('Function');
+    });
+  });
 });

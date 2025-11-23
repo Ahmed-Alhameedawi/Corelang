@@ -178,23 +178,36 @@ No other production language (TypeScript, Python, Rust, Go, Java) has built-in f
 
 ---
 
-## Phase 3: Security & RBAC (Weeks 13-18)
+## Phase 3: Security & RBAC (Weeks 13-18) 🚧 IN PROGRESS
 
 **Goal**: Implement complete security model with compile-time and runtime enforcement.
 
+**Status**: 🚧 80% Complete | 35 new tests (180 total)
+
 ### Deliverables
 
-- [ ] Security primitives: `role`, `perm`, `policy`, `principal`
-- [ ] Security-typed parameters and contexts
-- [ ] Data classification system
-  - [ ] Classification levels: public, internal, confidential, restricted
-  - [ ] Classification tracking through type system
-- [ ] Static security analysis
-  - [ ] Access control verification
-  - [ ] Data flow tracking
-  - [ ] Classification violation detection
-- [ ] Policy evaluation engine
-- [ ] Runtime security enforcer
+- [x] Security primitives: `role`, `perm`, `policy` (8 new parser tests)
+- [x] Data classification system
+  - [x] Classification levels: public, internal, confidential, restricted
+  - [x] Classification tracking through type system
+  - [x] Field-level classification in TypeDef
+- [x] Static security analysis (15 new tests)
+  - [x] Access control verification
+  - [x] Undefined role/permission detection
+  - [x] Circular inheritance detection
+  - [x] Classification violation detection
+  - [x] Role-based function access checking
+- [x] Security analyzer integration with CompilerContext
+- [x] CLI security inspection (--security flag)
+- [x] **Runtime policy evaluation engine** (12 new tests)
+  - [x] PolicyEvaluator class for access control decisions
+  - [x] Role inheritance resolution with effective roles
+  - [x] Deny-takes-precedence rule evaluation
+  - [x] Version-constrained access control (all-versions, stable-only, specific, ranges)
+  - [x] Bulk access evaluation and access reports
+  - [x] Hospital system policy evaluation example
+- [ ] Security-typed parameters and contexts (`Principal` type)
+- [ ] Runtime security enforcer integration with VM
 - [ ] Audit logging system
 - [ ] Multi-tenant isolation
 
@@ -220,11 +233,21 @@ No other production language (TypeScript, Python, Rust, Go, Java) has built-in f
 
 ### Key Milestones
 
-- **Week 14**: Security primitives and syntax complete
-- **Week 15**: Static access control verification working
-- **Week 16**: Data classification system operational
-- **Week 17**: Runtime security enforcer implemented
-- **Week 18**: Audit logging and multi-tenant isolation complete
+- **Week 14**: Security primitives and syntax complete ✅
+- **Week 15**: Static access control verification working ✅
+- **Week 16**: Data classification system operational ✅
+- **Week 17**: Runtime policy evaluation engine complete ✅
+- **Week 18**: Runtime security enforcer and audit logging ⏳
+
+### Files Created
+
+- `compiler/security/analyzer.ts` + tests (457 lines, 15 tests)
+- `compiler/security/policy.ts` + tests (310 lines, 12 tests) ✅ NEW
+- `examples/secure-banking.core` (comprehensive security example)
+- `examples/policy-evaluation-example.ts` (runtime policy demo) ✅ NEW
+- Updated `compiler/parser/parser.ts` (+180 lines for security parsing)
+- Updated `compiler/context.ts` (security integration)
+- Updated `tools/cli.ts` (+90 lines for --security flag)
 
 ---
 
@@ -658,9 +681,9 @@ const result = await mod.call(ctx, 'get:v2', {user_id: '...'});
 
 ## Current Status
 
-**Status**: Active Development - Phase 3 Ready
-**Version**: 0.2.0 (Phase 2 Complete)
-**Last Updated**: 2025-01-18
+**Status**: Active Development - Phase 3 In Progress
+**Version**: 0.3.0 (Phase 3 - 80% Complete)
+**Last Updated**: 2025-01-23
 
 ### Completed ✅
 - [x] Language design and specification
@@ -677,24 +700,33 @@ const result = await mod.call(ctx, 'get:v2', {user_id: '...'});
   - [x] Migration system
   - [x] Rich diagnostics
   - [x] Compiler context
+- [x] **Phase 3: Security & RBAC** (80% - 35 new tests)
+  - [x] Security primitive parsing (role, perm, policy)
+  - [x] Static security analysis
+  - [x] Runtime policy evaluation engine
+  - [x] Data classification system
+  - [x] CLI security inspection
 
 ### Current Metrics
-- **Test Suites**: 7 passed
-- **Total Tests**: 145 passed (100% pass rate)
-- **Lines of Code**: ~6,500+
-- **Example Programs**: 4 comprehensive examples
+- **Test Suites**: 9 passed
+- **Total Tests**: 180 passed (100% pass rate)
+- **Lines of Code**: ~8,000+
+- **Example Programs**: 6 comprehensive examples
 - **Documentation**: Complete and current
 
 ### In Progress
-- [ ] Phase 3 planning and design
-- [ ] Security system specification
+- [x] Phase 3 Security & RBAC (80% complete)
+  - [x] Runtime policy evaluation ✅ COMPLETE
+  - [ ] Runtime security enforcer (VM integration)
+  - [ ] Audit logging system
+  - [ ] Multi-tenant isolation
 
 ### Next Steps
-1. **Immediate**: Begin Phase 3 (Security & RBAC)
-   - Design security policy engine
-   - Implement RBAC system
-   - Add permission validation
-2. **Short-term**: Complete Phase 3-4 (Security + Runtime)
+1. **Immediate**: Complete Phase 3 (Security & RBAC)
+   - Implement runtime security enforcer
+   - Add audit logging
+   - Multi-tenant isolation features
+2. **Short-term**: Begin Phase 4 (Effect System & Runtime)
 3. **Mid-term**: MCP integration (Phase 8)
 4. **Long-term**: Production readiness (Phase 9)
 
